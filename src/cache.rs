@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::Result;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use log::info;
 use osmio::{OSMObjBase, OSMReader, ObjId};
 use rayon::prelude::*;
@@ -13,17 +13,20 @@ use crate::models::{Highway, HighwayNode};
 
 pub fn highway_cached<P: AsRef<Path>>(filepath: P) -> Result<Vec<Highway>> {
     let pb_reading_style = ProgressStyle::with_template(
-        "[{elapsed_precise}] {percent:>3}% done. eta {eta:>4} {bar:10.cyan/blue} {bytes:>7}/{total_bytes:7} {per_sec:>12} {msg}",
+        "[{elapsed_precise}] {percent:>3}% done. eta {eta:>4} {bar:10.cyan/blue} {bytes:>7}/{total_bytes:7} {per_sec:>12} {msg}\n",
         ).unwrap();
 
-    let cache_filepath = format!("_cache.highway.{}", filepath.as_ref().to_str().unwrap());
+    let cache_filepath = filepath.as_ref().to_path_buf().with_file_name(format!(
+        "_cache.highway.{}",
+        filepath.as_ref().file_name().unwrap().to_str().unwrap()
+    ));
     if PathBuf::from(&cache_filepath).exists() {
         info!("Cache found for highway, reading data.");
 
-        let cache_fp = std::fs::File::open(cache_filepath)?;
+        let cache_fp = std::fs::File::open(&cache_filepath)?;
         let expected_len = cache_fp.metadata()?.len();
         let progress_bar = ProgressBar::new(cache_fp.metadata()?.len())
-            .with_message("Reading cache in {cache_filepath}")
+            .with_message(format!("Reading cache in {}", cache_filepath.display()))
             .with_style(pb_reading_style);
         let mut rdr = progress_bar.wrap_read(cache_fp);
         let mut buffer = Vec::with_capacity(expected_len.try_into()?);
@@ -50,10 +53,10 @@ pub fn highway_cached<P: AsRef<Path>>(filepath: P) -> Result<Vec<Highway>> {
     };
 
     info!("Number of highway in file : {}", highway.len());
-    let output_fp = std::fs::File::create_new(cache_filepath)?;
+    let output_fp = std::fs::File::create_new(&cache_filepath)?;
     let encoded: Vec<u8> = bincode::serialize(&highway)?;
     let progress_bar = ProgressBar::new(encoded.len().try_into()?)
-        .with_message("Writing cache in {cache_filepath}");
+        .with_message(format!("Writing cache in {}", cache_filepath.display()));
     let mut wrt = progress_bar.wrap_write(output_fp);
     wrt.write_all(&encoded)?;
 
@@ -65,21 +68,24 @@ pub fn nodes_cached<P: AsRef<Path>>(
     mut nodes_id: Vec<ObjId>,
 ) -> Result<Vec<HighwayNode>> {
     let pb_reading_style = ProgressStyle::with_template(
-        "[{elapsed_precise}] {percent:>3}% done. eta {eta:>4} {bar:10.cyan/blue} {bytes:>7}/{total_bytes:7} {per_sec:>5} {msg}",
+        "[{elapsed_precise}] {percent:>3}% done. eta {eta:>4} {bar:10.cyan/blue} {bytes:>7}/{total_bytes:7} {per_sec:>5} {msg}\n",
         ).unwrap();
     let pb_filtering_style = ProgressStyle::with_template(
-        "[{elapsed_precise}] {pos}/{len}. eta {eta:>4} {bar:10.cyan/blue} {per_sec:>5} {msg}",
+        "[{elapsed_precise}] {pos}/{len}. eta {eta:>4} {bar:10.cyan/blue} {per_sec:>5} {msg}\n",
     )
     .unwrap();
 
-    let cache_filepath = format!("_cache.nodes.{}", filepath.as_ref().to_str().unwrap());
+    let cache_filepath = filepath.as_ref().to_path_buf().with_file_name(format!(
+        "_cache.highway-nodes.{}",
+        filepath.as_ref().file_name().unwrap().to_str().unwrap()
+    ));
     if PathBuf::from(&cache_filepath).exists() {
         info!("Cache found for highway nodes, reading data.");
 
         let cache_fp = std::fs::File::open(&cache_filepath)?;
         let expected_len = cache_fp.metadata()?.len();
         let progress_bar = ProgressBar::new(cache_fp.metadata()?.len())
-            .with_message(format!("Reading cache in {cache_filepath}"))
+            .with_message(format!("Reading cache in {}", cache_filepath.display()))
             .with_style(pb_reading_style);
         let mut rdr = progress_bar.wrap_read(cache_fp);
         let mut buffer = Vec::with_capacity(expected_len.try_into()?);
@@ -109,20 +115,10 @@ pub fn nodes_cached<P: AsRef<Path>>(
         nodes_id.dedup();
         nodes.sort_by_key(|h| h.id);
         info!("Filtering to only highway nodes");
-        let multi = MultiProgress::new();
-        let nodes_iter = multi.add(
-            ProgressBar::new(dbg!(nodes.len()).try_into()?)
-                .with_style(pb_filtering_style.clone())
-                .with_message("All nodes"),
-        );
-        let nodes_id_iter = multi.add(
-            ProgressBar::new(dbg!(nodes_id.len()).try_into()?)
-                .with_style(pb_filtering_style)
-                .with_message("Nodes to find"),
-        );
 
         let highway_nodes: Vec<_> = nodes
             .into_par_iter()
+            .progress_with_style(pb_filtering_style)
             .filter(|node| nodes_id.binary_search(&node.id).is_ok())
             .collect();
 
@@ -133,7 +129,7 @@ pub fn nodes_cached<P: AsRef<Path>>(
     let output_fp = std::fs::File::create_new(&cache_filepath)?;
     let encoded: Vec<u8> = bincode::serialize(&highway_nodes)?;
     let progress_bar = ProgressBar::new(encoded.len().try_into()?)
-        .with_message(format!("Writing cache in {cache_filepath}"));
+        .with_message(format!("Writing cache in {}", cache_filepath.display()));
     let mut wrt = progress_bar.wrap_write(output_fp);
     wrt.write_all(&encoded)?;
 

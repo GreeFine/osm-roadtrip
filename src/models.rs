@@ -14,7 +14,7 @@ impl From<osmio::obj_types::StringWay> for Highway {
         Self {
             id: value.id(),
             tags,
-            nodes,
+            nodes_id: nodes,
         }
     }
 }
@@ -23,7 +23,7 @@ impl From<osmio::obj_types::StringWay> for Highway {
 pub struct Highway {
     pub id: ObjId,
     pub tags: SmallVec<[(SmolStr, SmolStr); 1]>,
-    pub nodes: SmallVec<[ObjId; 6]>,
+    pub nodes_id: SmallVec<[ObjId; 6]>,
 }
 
 impl From<osmio::obj_types::StringNode> for HighwayNode {
