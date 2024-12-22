@@ -1,11 +1,9 @@
-use std::{fs::File, io::Write};
-
 use geo_svg::{Color, Text, ToSvg};
 use geo_types::{Coord, LineString, Point};
 
 use crate::{mercator::highway_lat_lon_mercator, models::HighwayNode};
 
-pub fn draw_svg(highways_nodes: Vec<Vec<&HighwayNode>>) {
+pub fn draw_nodes(highways_nodes: Vec<Vec<&HighwayNode>>) -> String {
     let points: Vec<_> = highways_nodes
         .iter()
         .flat_map(|highway_nodes| {
@@ -55,8 +53,5 @@ pub fn draw_svg(highways_nodes: Vec<Vec<&HighwayNode>>) {
                 .with_stroke_color(Color::Named("green")),
         );
 
-    // Write the SVG to a file
-    let mut file = File::create("road_map.svg").expect("Unable to create file");
-    file.write_all(svg.to_string().as_bytes())
-        .expect("Unable to write data");
+    svg.to_string()
 }

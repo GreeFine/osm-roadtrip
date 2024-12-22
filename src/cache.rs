@@ -5,9 +5,9 @@ use std::{
 
 use anyhow::Result;
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
-use log::info;
 use osmio::{OSMObjBase, OSMReader, ObjId};
 use rayon::prelude::*;
+use tracing::info;
 
 use crate::models::{Highway, HighwayNode};
 
