@@ -1,24 +1,25 @@
-import React from 'react';
-import logo from './logo.svg';
+import { useEffect, useState } from 'react';
 import './App.css';
 
 function App() {
+  const [svg, setSvg] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      const svg_request = await fetch("http://localhost:8080/svg");
+      if (svg_request.ok) {
+        const api_svg = await svg_request.text();
+        setSvg(api_svg);
+      }
+    })()
+  }, [])
+
+  const size = svg.length;
+
   return (
     <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.tsx</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+      <p>Size of svg: {size}</p>
+      <div dangerouslySetInnerHTML={{ __html: svg }} />
     </div>
   );
 }
