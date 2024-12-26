@@ -45,11 +45,11 @@ pub fn highway_cached<P: AsRef<Path>>(filepath: P) -> Result<Vec<Highway>> {
             .with_style(pb_reading_style);
         let rdr = progress_bar.wrap_read(input_fp);
         let mut reader = osmio::stringpbf::PBFReader::new(rdr);
-        reader
-            .ways()
-            .filter(|way| way.has_tag("highway"))
-            .map(From::from)
-            .collect()
+        let mut result = Vec::new();
+        for way in reader.ways().filter(|way| way.has_tag("highway")) {
+            result.push(Highway::from((way, &mut nodes)));
+        }
+        result
     };
 
     info!("Number of highway in file : {}", highway.len());
@@ -63,17 +63,10 @@ pub fn highway_cached<P: AsRef<Path>>(filepath: P) -> Result<Vec<Highway>> {
     Ok(highway)
 }
 
-pub fn nodes_cached<P: AsRef<Path>>(
-    filepath: P,
-    mut nodes_id: Vec<ObjId>,
-) -> Result<Vec<HighwayNode>> {
+fn nodes<P: AsRef<Path>>(filepath: P) -> Result<HashMap<ObjId, HighwayNode>> {
     let pb_reading_style = ProgressStyle::with_template(
         "[{elapsed_precise}] {percent:>3}% done. eta {eta:>4} {bar:10.cyan/blue} {bytes:>7}/{total_bytes:7} {per_sec:>5} {msg}\n",
         ).unwrap();
-    let pb_filtering_style = ProgressStyle::with_template(
-        "[{elapsed_precise}] {pos}/{len}. eta {eta:>4} {bar:10.cyan/blue} {per_sec:>5} {msg}\n",
-    )
-    .unwrap();
 
     let cache_filepath = filepath.as_ref().to_path_buf().with_file_name(format!(
         "_cache.highway-nodes.{}",
@@ -90,39 +83,32 @@ pub fn nodes_cached<P: AsRef<Path>>(
         let mut rdr = progress_bar.wrap_read(cache_fp);
         let mut buffer = Vec::with_capacity(expected_len.try_into()?);
         let _ = rdr.read_to_end(&mut buffer)?;
-        let highways: Vec<HighwayNode> = bincode::deserialize(&buffer)?;
+        let highways: HashMap<ObjId, HighwayNode> = bincode::deserialize(&buffer)?;
         info!("Got {} highway nodes from cache.", highways.len());
 
         return Ok(highways);
     }
 
     info!("Cache not found for highway nodes, generating ...");
-    let highway_nodes = {
+    let highway_nodes: HashMap<ObjId, HighwayNode> = {
         info!("Extracting nodes from file");
 
-        let mut nodes: Vec<HighwayNode> = {
             let input_fp = std::fs::File::open(&filepath)?;
             let progress_bar = ProgressBar::new(input_fp.metadata()?.len())
                 .with_message("Reading input file")
                 .with_style(pb_reading_style);
             let rdr = progress_bar.wrap_read(input_fp);
             let mut reader = osmio::stringpbf::PBFReader::new(rdr);
-            reader.nodes().map(From::from).collect()
-        };
-
-        // Faster contains search
-        nodes_id.sort();
-        nodes_id.dedup();
-        nodes.sort_by_key(|h| h.id);
-        info!("Filtering to only highway nodes");
-
-        let highway_nodes: Vec<_> = nodes
-            .into_par_iter()
-            .progress_with_style(pb_filtering_style)
-            .filter(|node| nodes_id.binary_search(&node.id).is_ok())
+        let vec: Vec<HighwayNode> = reader
+            .nodes()
+            .filter(|n| n.has_lat_lon() && !n.deleted())
+            .map(From::from)
             .collect();
-
-        highway_nodes
+        let mut result = HashMap::new();
+        for item in vec {
+            result.insert(item.id, item);
+        }
+        result
     };
 
     info!("Number of highway nodes in file : {}", highway_nodes.len());
@@ -134,4 +120,29 @@ pub fn nodes_cached<P: AsRef<Path>>(
     wrt.write_all(&encoded)?;
 
     Ok(highway_nodes)
+}
+
+pub fn highway_connections(all_highways: &Vec<Highway>) -> HashMap<ObjId, Vec<ObjId>> {
+    let pb_reading_style = ProgressStyle::with_template(
+        "[{elapsed}] {percent:>3}% done. eta {eta:>4} {bar:10.cyan/blue} {per_sec:>5} {msg}\n",
+    )
+    .unwrap();
+
+    all_highways[..10000]
+        .par_iter()
+        .progress_with_style(pb_reading_style)
+        .map(|highway| {
+            let ids_connecting = all_highways[..10000]
+                .iter()
+                .filter(|other| {
+                    other.nodes.first() == highway.nodes.first()
+                        || other.nodes.first() == highway.nodes.last()
+                        || other.nodes.last() == highway.nodes.first()
+                        || other.nodes.last() == highway.nodes.last()
+                })
+                .map(|other| other.id)
+                .collect();
+            (highway.id, ids_connecting)
+        })
+        .collect()
 }

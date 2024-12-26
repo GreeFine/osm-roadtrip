@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 mod api;
 mod cache;
 mod mercator;
@@ -11,15 +13,11 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let filename = "osm-files/midi-pyrenees-latest.osm.pbf";
-    let highways = cache::highway_cached(filename)?;
-    let highways_nodes = {
-        let highways_nodes_ids: Vec<_> = highways.iter().flat_map(|h| h.nodes_id.clone()).collect();
-        cache::nodes_cached(filename, highways_nodes_ids)?
-    };
-
+    let highways = cache::highways(filename)?;
+    let highway_connections = cache::highway_connections(&highways);
     let state = api::AppState {
         highways,
-        highways_nodes,
+        highway_connections,
     };
 
     api::run(state).await;
