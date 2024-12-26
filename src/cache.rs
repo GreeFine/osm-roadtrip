@@ -1,17 +1,18 @@
 use std::{
+    collections::HashMap,
     io::{Read, Write},
     path::{Path, PathBuf},
 };
 
 use anyhow::Result;
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
-use osmio::{OSMObjBase, OSMReader, ObjId};
-use rayon::prelude::*;
+use osmio::{Node, OSMObjBase, OSMReader, ObjId};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tracing::info;
 
 use crate::models::{Highway, HighwayNode};
 
-pub fn highway_cached<P: AsRef<Path>>(filepath: P) -> Result<Vec<Highway>> {
+pub fn highways<P: AsRef<Path>>(filepath: P) -> Result<Vec<Highway>> {
     let pb_reading_style = ProgressStyle::with_template(
         "[{elapsed_precise}] {percent:>3}% done. eta {eta:>4} {bar:10.cyan/blue} {bytes:>7}/{total_bytes:7} {per_sec:>12} {msg}\n",
         ).unwrap();
@@ -38,6 +39,7 @@ pub fn highway_cached<P: AsRef<Path>>(filepath: P) -> Result<Vec<Highway>> {
     }
     info!("Cache not found for highway, generating ...");
 
+    let mut nodes = nodes(&filepath)?;
     let highway: Vec<Highway> = {
         let input_fp = std::fs::File::open(&filepath)?;
         let progress_bar = ProgressBar::new(input_fp.metadata()?.len())
@@ -93,12 +95,12 @@ fn nodes<P: AsRef<Path>>(filepath: P) -> Result<HashMap<ObjId, HighwayNode>> {
     let highway_nodes: HashMap<ObjId, HighwayNode> = {
         info!("Extracting nodes from file");
 
-            let input_fp = std::fs::File::open(&filepath)?;
-            let progress_bar = ProgressBar::new(input_fp.metadata()?.len())
-                .with_message("Reading input file")
-                .with_style(pb_reading_style);
-            let rdr = progress_bar.wrap_read(input_fp);
-            let mut reader = osmio::stringpbf::PBFReader::new(rdr);
+        let input_fp = std::fs::File::open(&filepath)?;
+        let progress_bar = ProgressBar::new(input_fp.metadata()?.len())
+            .with_message("Reading input file")
+            .with_style(pb_reading_style);
+        let rdr = progress_bar.wrap_read(input_fp);
+        let mut reader = osmio::stringpbf::PBFReader::new(rdr);
         let vec: Vec<HighwayNode> = reader
             .nodes()
             .filter(|n| n.has_lat_lon() && !n.deleted())
