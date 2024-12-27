@@ -5,9 +5,8 @@ use std::{
 };
 
 use anyhow::Result;
-use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressStyle};
 use osmio::{Node, OSMObjBase, OSMReader, ObjId};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tracing::info;
 
 use crate::models::{Highway, HighwayNode};
@@ -125,26 +124,28 @@ fn nodes<P: AsRef<Path>>(filepath: P) -> Result<HashMap<ObjId, HighwayNode>> {
 }
 
 pub fn highway_connections(all_highways: &[Highway]) -> HashMap<ObjId, Vec<ObjId>> {
-    let pb_reading_style = ProgressStyle::with_template(
-        "[{elapsed}] {percent:>3}% done. eta {eta:>4} {bar:10.cyan/blue} {per_sec:>5} {msg}\n",
-    )
-    .unwrap();
+    todo!("rework this with working with tiles");
 
-    all_highways[..10000]
-        .par_iter()
-        .progress_with_style(pb_reading_style)
-        .map(|highway| {
-            let ids_connecting = all_highways[..10000]
-                .iter()
-                .filter(|other| {
-                    other.nodes.first() == highway.nodes.first()
-                        || other.nodes.first() == highway.nodes.last()
-                        || other.nodes.last() == highway.nodes.first()
-                        || other.nodes.last() == highway.nodes.last()
-                })
-                .map(|other| other.id)
-                .collect();
-            (highway.id, ids_connecting)
-        })
-        .collect()
+    // let pb_reading_style = ProgressStyle::with_template(
+    //       "[{elapsed}] {percent:>3}% done. eta {eta:>4} {bar:10.cyan/blue} {per_sec:>5} {msg}\n",
+    //   )
+    //   .unwrap();
+
+    // all_highways[..10000]
+    //     .par_iter()
+    //     .progress_with_style(pb_reading_style)
+    //     .map(|highway| {
+    //         let ids_connecting = all_highways[..10000]
+    //             .iter()
+    //             .filter(|other| {
+    //                 other.nodes.first() == highway.nodes.first()
+    //                     || other.nodes.first() == highway.nodes.last()
+    //                     || other.nodes.last() == highway.nodes.first()
+    //                     || other.nodes.last() == highway.nodes.last()
+    //             })
+    //             .map(|other| other.id)
+    //             .collect();
+    //         (highway.id, ids_connecting)
+    //     })
+    //     .collect()
 }

@@ -12,11 +12,7 @@ async fn main() -> anyhow::Result<()> {
 
     let filename = "osm-files/midi-pyrenees-latest.osm.pbf";
     let highways = cache::highways(filename)?;
-    let highway_connections = cache::highway_connections(&highways);
-    let state = api::AppState {
-        highways,
-        highway_connections,
-    };
+    let state = api::AppState { highways };
 
     api::run(state).await;
 

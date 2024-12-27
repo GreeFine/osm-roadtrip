@@ -1,9 +1,14 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
-use axum::{self, Router, extract::State, response::IntoResponse, routing::get};
+use axum::{
+    self, Router,
+    extract::{Query, State},
+    response::IntoResponse,
+    routing::get,
+};
 use geo::Line;
-use osmio::ObjId;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use serde::Deserialize;
 use tower_http::{
     cors::{Any, CorsLayer},
     trace::{self, TraceLayer},
@@ -14,20 +19,20 @@ use crate::{models::Highway, svg};
 
 fn get_connecing<'b>(
     highways_to_lookup: &Vec<&Highway>,
-    all_highways: &'b Vec<&Highway>,
-    depth: u64,
+    nearby_highways: &'b mut Vec<&Highway>,
+    depth: u32,
 ) -> Vec<&'b Highway> {
     info!(
         "Connection computing depth : {depth}, highways_to_lookup: {}",
         highways_to_lookup.len()
     );
-    let mut connecting: Vec<&Highway> = all_highways
+    let mut connecting: Vec<&Highway> = nearby_highways
         .par_iter()
         .filter_map(|highway| {
             if highway.nodes.iter().any(|highway_node| {
                 highways_to_lookup
                     .iter()
-                    .any(|hl| hl.nodes.contains(highway_node))
+                    .any(|hl| hl.id != highway_node.id && hl.nodes.contains(highway_node))
             }) {
                 // needed for deref
                 return Some(*highway);
@@ -35,25 +40,36 @@ fn get_connecing<'b>(
             None
         })
         .collect();
+
     if depth == 0 {
         return connecting;
     }
-    let mut depth = get_connecing(&connecting, all_highways, depth - 1);
+    nearby_highways.retain(|hl| !connecting.iter().any(|hc| hc.id == hl.id));
+    let mut depth = get_connecing(&connecting, nearby_highways, depth - 1);
     depth.append(&mut connecting);
     depth
 }
 
-async fn get_svg(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+#[derive(Debug, Deserialize)]
+struct QueryParam {
+    id: i64,
+    depth: Option<u32>,
+}
+
+async fn get_svg(
+    State(state): State<Arc<AppState>>,
+    Query(param): Query<QueryParam>,
+) -> impl IntoResponse {
     let highway = state
         .highways
         .iter()
-        .find(|way| way.id == 23053042)
+        .find(|way| way.id == param.id)
         .unwrap();
     info!("road: {:?}", highway);
 
     info!("Getting connections");
     let root_coord = highway.nodes.first().unwrap().coord();
-    let close_enough_highways: Vec<&_> = state
+    let mut close_enough_highways: Vec<&_> = state
         .highways
         .iter()
         .filter(|h| {
@@ -62,7 +78,11 @@ async fn get_svg(State(state): State<Arc<AppState>>) -> impl IntoResponse {
             delta.x.abs() < 10_000.0 && delta.y.abs() < 10_000.0
         })
         .collect();
-    let mut connecting = get_connecing(&vec![&highway], &close_enough_highways, 30);
+    let mut connecting = get_connecing(
+        &vec![&highway],
+        &mut close_enough_highways,
+        param.depth.unwrap_or(15),
+    );
     info!("Connecting highway: {}", connecting.len());
     connecting.push(highway);
 
@@ -72,7 +92,6 @@ async fn get_svg(State(state): State<Arc<AppState>>) -> impl IntoResponse {
 #[derive(Debug)]
 pub struct AppState {
     pub highways: Vec<Highway>,
-    pub highway_connections: HashMap<ObjId, Vec<ObjId>>,
 }
 
 pub async fn run(state: AppState) {
