@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use axum::{self, Router, extract::State, response::IntoResponse, routing::get};
+use geo::Line;
 use osmio::ObjId;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tower_http::{
@@ -11,23 +12,27 @@ use tracing::{Level, info};
 
 use crate::{models::Highway, svg};
 
-fn get_connecing<'a, 'b>(
-    highways_to_lookup: &'a Vec<&Highway>,
-    all_highways: &'b Vec<Highway>,
+fn get_connecing<'b>(
+    highways_to_lookup: &Vec<&Highway>,
+    all_highways: &'b Vec<&Highway>,
     depth: u64,
 ) -> Vec<&'b Highway> {
     info!(
         "Connection computing depth : {depth}, highways_to_lookup: {}",
         highways_to_lookup.len()
     );
-    let mut connecting: Vec<_> = all_highways
+    let mut connecting: Vec<&Highway> = all_highways
         .par_iter()
-        .filter(|all_highway| {
-            all_highway.nodes.iter().any(|all_highway_node| {
+        .filter_map(|highway| {
+            if highway.nodes.iter().any(|highway_node| {
                 highways_to_lookup
                     .iter()
-                    .any(|hl| hl.nodes.contains(all_highway_node))
-            })
+                    .any(|hl| hl.nodes.contains(highway_node))
+            }) {
+                // needed for deref
+                return Some(*highway);
+            }
+            None
         })
         .collect();
     if depth == 0 {
@@ -39,30 +44,29 @@ fn get_connecing<'a, 'b>(
 }
 
 async fn get_svg(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    // let highway = state
-    //     .highways
-    //     .iter()
-    //     .find(|way| way.id == 23053042)
-    //     .unwrap();
-    // info!("road: {:?}", highway);
+    let highway = state
+        .highways
+        .iter()
+        .find(|way| way.id == 23053042)
+        .unwrap();
+    info!("road: {:?}", highway);
 
-    // info!("Getting connections");
-    // let mut connecting = get_connecing(&vec![&highway], &state.highways, 5);
-    // info!("Connecting highway: {}", connecting.len());
-    // connecting.push(highway);
-    let to_draw: Vec<_> = state
-        .highway_connections
-        .values()
-        .flat_map(|ids| {
-            ids.iter().map(|id| {
-                state
-                    .highways
-                    .get(state.highways.binary_search_by(|h| h.id.cmp(id)).unwrap())
-                    .unwrap()
-            })
+    info!("Getting connections");
+    let root_coord = highway.nodes.first().unwrap().coord();
+    let close_enough_highways: Vec<&_> = state
+        .highways
+        .iter()
+        .filter(|h| {
+            let first_coord = h.nodes.first().unwrap().coord();
+            let delta = Line::new(first_coord, root_coord).delta();
+            delta.x.abs() < 10_000.0 && delta.y.abs() < 10_000.0
         })
         .collect();
-    svg::draw_nodes(to_draw)
+    let mut connecting = get_connecing(&vec![&highway], &close_enough_highways, 30);
+    info!("Connecting highway: {}", connecting.len());
+    connecting.push(highway);
+
+    svg::draw_nodes(connecting)
 }
 
 #[derive(Debug)]

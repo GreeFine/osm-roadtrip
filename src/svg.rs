@@ -1,7 +1,7 @@
+use geo::{Coord, LineString};
 use geo_svg::{Color, ToSvg};
-use geo_types::{Coord, LineString};
 
-use crate::{mercator::highway_lat_lon_mercator, models::Highway};
+use crate::models::Highway;
 
 pub fn draw_nodes(highways: Vec<&Highway>) -> String {
     // let points: Vec<_> = highways_nodes
@@ -33,8 +33,10 @@ pub fn draw_nodes(highways: Vec<&Highway>) -> String {
             let line_coords = highway
                 .nodes
                 .iter()
-                .map(|node| highway_lat_lon_mercator(node))
-                .map(|(x, y)| Coord { x, y })
+                .map(|node| Coord {
+                    x: node.latitude,
+                    y: node.longitude,
+                })
                 .collect();
             LineString::new(line_coords)
         })

@@ -124,7 +124,7 @@ fn nodes<P: AsRef<Path>>(filepath: P) -> Result<HashMap<ObjId, HighwayNode>> {
     Ok(highway_nodes)
 }
 
-pub fn highway_connections(all_highways: &Vec<Highway>) -> HashMap<ObjId, Vec<ObjId>> {
+pub fn highway_connections(all_highways: &[Highway]) -> HashMap<ObjId, Vec<ObjId>> {
     let pb_reading_style = ProgressStyle::with_template(
         "[{elapsed}] {percent:>3}% done. eta {eta:>4} {bar:10.cyan/blue} {per_sec:>5} {msg}\n",
     )

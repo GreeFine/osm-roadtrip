@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 
-use osmio::{Lat, Lon, Node, Way};
+use geo::Coord;
+use osmio::{Node, Way};
 use osmio::{OSMObjBase, ObjId};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use smol_str::SmolStr;
+
+use crate::projection;
 
 impl
     From<(
@@ -48,7 +51,7 @@ impl From<osmio::obj_types::StringNode> for HighwayNode {
             .tags()
             .map(|(a, b)| (SmolStr::new(a), SmolStr::new(b)))
             .collect();
-        let (latitude, longitude) = value.lat_lon().unwrap();
+        let (latitude, longitude) = projection::lat_lon_to_epsg3857(value.lat_lon().unwrap());
         Self {
             id: value.id(),
             tags,
@@ -62,12 +65,21 @@ impl From<osmio::obj_types::StringNode> for HighwayNode {
 pub struct HighwayNode {
     pub id: ObjId,
     pub tags: SmallVec<[(SmolStr, SmolStr); 1]>,
-    pub latitude: Lat,
-    pub longitude: Lon,
+    pub latitude: f64,
+    pub longitude: f64,
 }
 
 impl PartialEq for HighwayNode {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
+    }
+}
+
+impl HighwayNode {
+    pub fn coord(&self) -> Coord {
+        Coord {
+            x: self.latitude,
+            y: self.longitude,
+        }
     }
 }

@@ -1,9 +1,7 @@
-use std::collections::HashMap;
-
 mod api;
 mod cache;
-mod mercator;
 mod models;
+mod projection;
 mod svg;
 
 #[tokio::main]
