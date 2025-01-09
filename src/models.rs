@@ -51,7 +51,8 @@ impl From<osmio::obj_types::StringNode> for HighwayNode {
             .tags()
             .map(|(a, b)| (SmolStr::new(a), SmolStr::new(b)))
             .collect();
-        let (latitude, longitude) = projection::lat_lon_to_epsg3857(value.lat_lon().unwrap());
+        // let (latitude, longitude) = projection::lat_lon_to_epsg3857(value.lat_lon().unwrap());
+        let (latitude, longitude) = value.lat_lon_f64().unwrap();
         Self {
             id: value.id(),
             tags,
@@ -76,10 +77,8 @@ impl PartialEq for HighwayNode {
 }
 
 impl HighwayNode {
-    pub fn coord(&self) -> Coord {
-        Coord {
-            x: self.latitude,
-            y: self.longitude,
-        }
+    pub fn coord_epsg3857(&self) -> Coord {
+        let (lat, lon) = projection::lat_lon_to_epsg3857(self.latitude, self.longitude);
+        Coord { x: lat, y: lon }
     }
 }

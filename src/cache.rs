@@ -47,7 +47,22 @@ pub fn highways<P: AsRef<Path>>(filepath: P) -> Result<Vec<Highway>> {
         let rdr = progress_bar.wrap_read(input_fp);
         let mut reader = osmio::stringpbf::PBFReader::new(rdr);
         let mut result = Vec::new();
-        for way in reader.ways().filter(|way| way.has_tag("highway")) {
+        for way in reader.ways().filter(|way| {
+            way.has_tag("highway")
+                && [
+                    "motorway",
+                    "trunk",
+                    "primary",
+                    "secondary",
+                    "tertiary",
+                    "motorway_link",
+                    "trunk_link",
+                    "primary_link",
+                    "secondary_link",
+                    "tertiary_link",
+                ]
+                .contains(&way.tag("highway").unwrap())
+        }) {
             result.push(Highway::from((way, &mut nodes)));
         }
         result

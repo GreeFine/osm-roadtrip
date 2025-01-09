@@ -1,14 +1,13 @@
-use std::sync::Arc;
-
 use axum::{
-    self, Router,
+    self, Json, Router,
     extract::{Query, State},
     response::IntoResponse,
     routing::get,
 };
 use geo::Line;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tower_http::{
     cors::{Any, CorsLayer},
     trace::{self, TraceLayer},
@@ -19,8 +18,8 @@ use crate::{models::Highway, svg};
 
 fn get_connecing<'b>(
     highways_to_lookup: &Vec<&Highway>,
-    nearby_highways: &'b mut Vec<&Highway>,
-    depth: u32,
+    mut nearby_highways: Vec<&'b Highway>,
+    depth: u64,
 ) -> Vec<&'b Highway> {
     info!(
         "Connection computing depth : {depth}, highways_to_lookup: {}",
@@ -52,41 +51,80 @@ fn get_connecing<'b>(
 
 #[derive(Debug, Deserialize)]
 struct QueryParam {
-    id: i64,
-    depth: Option<u32>,
+    road_id: Option<i64>,
+    depth: Option<u64>,
+    bbox: Option<f64>,
+    lon: f64,
+    lat: f64,
 }
 
 async fn get_svg(
     State(state): State<Arc<AppState>>,
     Query(param): Query<QueryParam>,
 ) -> impl IntoResponse {
-    let highway = state
-        .highways
-        .iter()
-        .find(|way| way.id == param.id)
-        .unwrap();
+    let connecting = nodes_close(&state, param);
+
+    svg::draw_nodes(connecting)
+}
+
+#[derive(Debug, Serialize)]
+struct Pathing {
+    color: &'static str,
+    path: Vec<[f64; 2]>,
+}
+
+async fn get_nodes(
+    State(state): State<Arc<AppState>>,
+    Query(param): Query<QueryParam>,
+) -> impl IntoResponse {
+    let connecting = nodes_close(&state, param);
+    let nodes_geo_array: Vec<Pathing> = connecting
+        .into_iter()
+        .map(|h| Pathing {
+            color: "startNodeFill",
+            path: h.nodes.iter().map(|n| [n.longitude, n.latitude]).collect(),
+        })
+        .collect();
+    Json(nodes_geo_array)
+}
+
+fn nodes_close(state: &Arc<AppState>, param: QueryParam) -> Vec<&Highway> {
+    let highway = if let Some(road_id) = param.road_id {
+        state.highways.iter().find(|way| way.id == road_id).unwrap()
+    } else {
+        state
+            .highways
+            .iter()
+            .find(|way| {
+                way.nodes.iter().any(|n| {
+                    (n.longitude - param.lon).abs() < 0.001
+                        && (n.latitude - param.lat).abs() < 0.001
+                })
+            })
+            .unwrap()
+    };
     info!("road: {:?}", highway);
 
     info!("Getting connections");
-    let root_coord = highway.nodes.first().unwrap().coord();
-    let mut close_enough_highways: Vec<&_> = state
+    let root_coord = highway.nodes.first().unwrap().coord_epsg3857();
+    let close_enough_highways: Vec<&_> = state
         .highways
         .iter()
         .filter(|h| {
-            let first_coord = h.nodes.first().unwrap().coord();
+            let first_coord = h.nodes.first().unwrap().coord_epsg3857();
             let delta = Line::new(first_coord, root_coord).delta();
-            delta.x.abs() < 10_000.0 && delta.y.abs() < 10_000.0
+            delta.x.abs() < param.bbox.unwrap_or(10_000.)
+                && delta.y.abs() < param.bbox.unwrap_or(10_000.)
         })
         .collect();
     let mut connecting = get_connecing(
         &vec![&highway],
-        &mut close_enough_highways,
+        close_enough_highways,
         param.depth.unwrap_or(15),
     );
     info!("Connecting highway: {}", connecting.len());
     connecting.push(highway);
-
-    svg::draw_nodes(connecting)
+    connecting
 }
 
 #[derive(Debug)]
@@ -101,6 +139,7 @@ pub async fn run(state: AppState) {
     let app = Router::new()
         .route("/", get(|| async { "Ok" }))
         .route("/svg", get(get_svg))
+        .route("/nodes", get(get_nodes))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
