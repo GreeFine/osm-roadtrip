@@ -11,7 +11,7 @@ use axum_extra::{TypedHeader, headers};
 use geo::Line;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, sync::LazyLock, thread, time::Duration};
+use std::{net::SocketAddr, sync::LazyLock};
 use tokio::sync::mpsc;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -111,8 +111,8 @@ async fn nodes_close(param: QueryParam, progress: mpsc::Sender<Vec<&Highway>>) {
     .await;
 }
 
-static HIGHWAYS: LazyLock<Vec<Highway>> = LazyLock::new(|| {
-    let filename = "osm-files/midi-pyrenees-latest.osm.pbf";
+pub static HIGHWAYS: LazyLock<Vec<Highway>> = LazyLock::new(|| {
+    let filename = "osm-files/belgium-latest.osm.pbf";
     cache::highways(filename).unwrap()
 });
 
@@ -138,14 +138,14 @@ async fn ws_handler(
 
 /// Actual websocket statemachine (one will be spawned per connection)
 async fn handle_socket(mut socket: WebSocket, _who: SocketAddr) {
-    loop {
+    'socket: loop {
         let command = socket.recv().await.unwrap().unwrap();
         tracing::info!("Received command: {:?}", command);
         match command {
             Message::Text(text) => {
                 let param: QueryParam = serde_json::from_str(&text).unwrap();
                 // create channel to send progress updates
-                let (progress, mut progress_rx) = tokio::sync::mpsc::channel(100);
+                let (progress, mut progress_rx) = tokio::sync::mpsc::channel(3);
                 tokio::spawn(async move {
                     nodes_close(param, progress).await;
                 });
@@ -165,6 +165,10 @@ async fn handle_socket(mut socket: WebSocket, _who: SocketAddr) {
                         .await
                         .unwrap();
                 }
+            }
+            Message::Close(_) => {
+                tracing::info!("Client disconnect");
+                break 'socket;
             }
             _ => {
                 tracing::info!("Unknown command");

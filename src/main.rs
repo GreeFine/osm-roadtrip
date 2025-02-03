@@ -10,6 +10,9 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
+    // Force cache reading
+    let _ = *api::HIGHWAYS;
+
     api::run().await;
 
     Ok(())
